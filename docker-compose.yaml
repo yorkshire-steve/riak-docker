@@ -1,0 +1,5 @@
+services:
+    riak-test:
+        build: .
+        ports:
+            - "0.0.0.0:8098:8098"
