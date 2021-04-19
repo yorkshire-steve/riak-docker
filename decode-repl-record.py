@@ -186,7 +186,7 @@ class ReplRecord():
 
 
 if __name__ == "__main__":
-    with open(os.path.dirname(os.path.abspath(__file__)) + "/repl-test-files/test4",'rb') as f:
+    with open(os.path.dirname(os.path.abspath(__file__)) + "/repl-test-files/test",'rb') as f:
         data = f.read()
     
     rec = ReplRecord(data)
