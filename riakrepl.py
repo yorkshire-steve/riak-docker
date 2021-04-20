@@ -1,6 +1,7 @@
 #!/usr/bin/env python3.8
 import struct
 import os
+import zlib
 
 RIAK_MAGIC_NUMBER = 53
 
@@ -8,14 +9,15 @@ class ReplRecord():
 
     def __init__(self, raw_data=None):
         self.raw_data = raw_data
+        self.empty = True
         self.crc = 0
         self.is_delete = False
-        self.valid = False
         self.compressed = False
         self.bucket = None
         self.key = None
         self.vectorClocks = None
         self.siblings_count = 0
+        self.head_only = False
         self.value = None
         self.last_modified = None
         self.vtag = None
@@ -23,26 +25,43 @@ class ReplRecord():
         self.metadata = []
 
         self.decode()
-    
-    def _isValid(self, offset):
-        # record type and CRC32 of rest of data
-        fs = '!2?I'
-        (valid, delete, crc) = struct.unpack_from(fs, self.raw_data, offset=offset)
 
-        if not valid:
-            raise TypeError("Invalid record type")
+    def _isEmpty(self):
+        # check if repl record is empty
+        fs = '!?'
+        (not_empty,) = struct.unpack_from(fs, self.raw_data, offset=0)
 
-        self.crc = crc
+        if not_empty:
+            self.empty = False
+
+        return struct.calcsize(fs)
+
+    def _isDelete(self, offset):
+        # is this a delete record
+        fs = '!?'
+        (delete,) = struct.unpack_from(fs, self.raw_data, offset=offset)
         self.is_delete = delete
-        self.valid = valid
 
         return struct.calcsize(fs) + offset
 
+    def _isValid(self, offset):
+        # record type and CRC32 of rest of data
+        fs = '!I'
+        (crc,) = struct.unpack_from(fs, self.raw_data, offset=offset)
+        offset += struct.calcsize(fs)
+
+        self.crc = crc
+
+        if crc != zlib.crc32(self.raw_data[offset:]):
+            raise ValueError("invalid checksum")
+
+        return offset
+
     def _isCompressed(self, offset):
-        # compression header (true means false I think?)
+        # compression header
         fs = '!?'
-        (compressed,) = struct.unpack_from(fs, self.raw_data, offset=offset)
-        self.compressed = compressed
+        (uncompressed,) = struct.unpack_from(fs, self.raw_data, offset=offset)
+        self.compressed = not uncompressed
 
         return struct.calcsize(fs) + offset
 
@@ -103,6 +122,10 @@ class ReplRecord():
         (siblings_count,) = struct.unpack_from(fs,self.raw_data, offset=offset)
         self.siblings_count = siblings_count
 
+        # TODO: Add support for multiple siblings
+        if siblings_count != 1:
+            raise ValueError("record has multiple siblings")
+
         return struct.calcsize(fs) + offset
 
     def _getValue(self, offset):
@@ -110,12 +133,17 @@ class ReplRecord():
         (value_length,) = struct.unpack_from(fs,self.raw_data, offset=offset)
         offset += struct.calcsize(fs)
 
-        # extract value
-        fs = '!' + str(value_length) + 's'
-        (value,) = struct.unpack_from(fs,self.raw_data, offset=offset)
-        self.value = value
+        if value_length == 0:
+            self.head_only = True
+        else:
+            # extract value
+            fs = '!' + str(value_length) + 's'
+            (value,) = struct.unpack_from(fs,self.raw_data, offset=offset)
+            offset += struct.calcsize(fs)
+            # first byte of value is effectively meaningless
+            self.value = value[1:]
 
-        return struct.calcsize(fs) + offset
+        return offset
 
     def _extractMetaData(self, offset, metadata_length):
         offset_finish = offset + metadata_length
@@ -154,10 +182,11 @@ class ReplRecord():
             (val,) = struct.unpack_from(fs,self.raw_data, offset=offset)
             offset += struct.calcsize(fs)
 
-            self.metadata.append({key:val})
+            # first byte of key and val are effectively meaningless
+            self.metadata.append({key[1:]:val[1:]})
 
 
-    def _getMetaData(self,offset):
+    def _getMetaData(self, offset):
         fs = '!i'
         (metadata_length,) = struct.unpack_from(fs,self.raw_data, offset=offset)
         offset += struct.calcsize(fs)
@@ -167,31 +196,40 @@ class ReplRecord():
         return offset + metadata_length
 
     def decode(self):
-        offset = self._isValid(0)
+        offset = self._isEmpty()
 
-        offset = self._isCompressed(offset)
-        offset = self._getBucket(offset)
-        offset = self._getKey(offset)
+        if self.empty:
+            return
 
-        offset = self._getMagicNumber(offset)
-        offset = self._getVectorClocks(offset)
-        offset = self._getNumSiblings(offset)
+        offset = self._isDelete(offset)
 
-        for _ in range(self.siblings_count):
-            offset = self._getValue(offset)
-            offset = self._getMetaData(offset)
-        
-        if offset != len(self.raw_data):
-            raise TypeError("Did not fully decode record")
+        if self.is_delete:
+            # TODO: process a deletion record
+            pass
+
+        if not self.is_delete:
+            offset = self._isValid(offset)
+
+            offset = self._isCompressed(offset)
+            offset = self._getBucket(offset)
+            offset = self._getKey(offset)
+
+            offset = self._getMagicNumber(offset)
+            offset = self._getVectorClocks(offset)
+            offset = self._getNumSiblings(offset)
+
+            for _ in range(self.siblings_count):
+                offset = self._getValue(offset)
+                offset = self._getMetaData(offset)
+
+            if offset != len(self.raw_data):
+                raise ValueError("Did not fully decode record")
 
 
 if __name__ == "__main__":
-    with open(os.path.dirname(os.path.abspath(__file__)) + "/repl-test-files/test",'rb') as f:
+    with open(os.path.dirname(os.path.abspath(__file__)) + "/tests/data/test",'rb') as f:
         data = f.read()
-    
+
     rec = ReplRecord(data)
 
-    print(rec.bucket, rec.key)
-    print(rec.value)
-    print(rec.last_modified, rec.vtag)
     print(rec.metadata)
