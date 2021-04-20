@@ -12,6 +12,7 @@ class ReplRecord():
         self.empty = True
         self.crc = 0
         self.is_delete = False
+        self.tomb_clock = None
         self.compressed = False
         self.bucket = None
         self.key = None
@@ -195,6 +196,18 @@ class ReplRecord():
 
         return offset + metadata_length
 
+    def _getTombClock(self, offset):
+        fs = '!i'
+        (tomb_clock_len,) = struct.unpack_from(fs,self.raw_data, offset=offset)
+        offset += struct.calcsize(fs)
+
+        # extract tomb clock
+        fs = '!' + str(tomb_clock_len) + 's'
+        (tomb_clock,) = struct.unpack_from(fs,self.raw_data, offset=offset)
+        self.tomb_clock = tomb_clock
+
+        return struct.calcsize(fs) + offset
+
     def decode(self):
         offset = self._isEmpty()
 
@@ -204,32 +217,30 @@ class ReplRecord():
         offset = self._isDelete(offset)
 
         if self.is_delete:
-            # TODO: process a deletion record
-            pass
+            offset = self._getTombClock(offset)
 
-        if not self.is_delete:
-            offset = self._isValid(offset)
+        offset = self._isValid(offset)
 
-            offset = self._isCompressed(offset)
-            offset = self._getBucket(offset)
-            offset = self._getKey(offset)
+        offset = self._isCompressed(offset)
+        offset = self._getBucket(offset)
+        offset = self._getKey(offset)
 
-            offset = self._getMagicNumber(offset)
-            offset = self._getVectorClocks(offset)
-            offset = self._getNumSiblings(offset)
+        offset = self._getMagicNumber(offset)
+        offset = self._getVectorClocks(offset)
+        offset = self._getNumSiblings(offset)
 
-            for _ in range(self.siblings_count):
-                offset = self._getValue(offset)
-                offset = self._getMetaData(offset)
+        for _ in range(self.siblings_count):
+            offset = self._getValue(offset)
+            offset = self._getMetaData(offset)
 
-            if offset != len(self.raw_data):
-                raise ValueError("Did not fully decode record")
+        if offset != len(self.raw_data):
+            raise ValueError("Did not fully decode record")
 
 
 if __name__ == "__main__":
-    with open(os.path.dirname(os.path.abspath(__file__)) + "/tests/data/test",'rb') as f:
+    with open(os.path.dirname(os.path.abspath(__file__)) + "/tests/data/test3",'rb') as f:
         data = f.read()
 
     rec = ReplRecord(data)
 
-    print(rec.metadata)
+    print(rec.tomb_clock)

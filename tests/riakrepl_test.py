@@ -10,10 +10,6 @@ class TestReplRecord(unittest.TestCase):
 
         rec = ReplRecord(data)
 
-        # self.vectorClocks = None
-        # self.key_deleted = False
-        # self.metadata = []
-
         self.assertFalse(rec.empty)
         self.assertEqual(rec.crc, 3257020141)
         self.assertFalse(rec.is_delete)
