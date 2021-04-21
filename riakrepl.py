@@ -240,7 +240,7 @@ class ReplRecord():
         fs = '!' + str(tomb_clock_len) + 's'
         (tomb_clock,) = struct.unpack_from(fs,self.raw_data, offset=offset)
         offset += struct.calcsize(fs)
-        self.tomb_clock = tomb_clock
+        self.tomb_clock = base64.b64encode(tomb_clock)
 
         return offset
 
