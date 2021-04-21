@@ -17,9 +17,11 @@ class TestReplRecord(unittest.TestCase):
         self.assertEqual(rec.bucket_type, b'')
         self.assertEqual(rec.bucket, b'test')
         self.assertEqual(rec.key, b'test')
+        self.assertEqual(rec.vector_clocks, b'g2wAAAACaAJtAAAACL8Aoe8A+zsmaAJhAm4FAHcc8tkOaAJtAAAADL8Aoe8A+0zuAAAAAWgCYQJuBQCtHfLZDmo=')
         self.assertEqual(rec.value, b'{"test":"data4"}')
         self.assertEqual(rec.last_modified, '1618846125.126554')
         self.assertEqual(rec.vtag, b'5kzmcxRpTdtQFl0IIuAbkF')
+        self.assertIn({b'content-type': b'application/json'}, rec.metadata)
 
     def test_empty(self):
         with open(os.path.dirname(os.path.abspath(__file__)) + "/data/test2",'rb') as f:
@@ -39,6 +41,7 @@ class TestReplRecord(unittest.TestCase):
         self.assertTrue(rec.is_delete)
         self.assertIsNotNone(rec.tomb_clock)
         self.assertTrue(rec.head_only)
+        self.assertEqual(rec.bucket_type, b'')
         self.assertEqual(rec.bucket, b'test')
         self.assertEqual(rec.key, b'test')
 
@@ -47,14 +50,14 @@ class TestReplRecord(unittest.TestCase):
             data = f.read()
 
         with self.assertRaisesRegex(ValueError,'invalid checksum'):
-            rec = ReplRecord(data)
+            ReplRecord(data)
 
     def test_invalid_magic_number(self):
         with open(os.path.dirname(os.path.abspath(__file__)) + "/data/test5",'rb') as f:
             data = f.read()
 
         with self.assertRaisesRegex(ValueError,'invalid riak object'):
-            rec = ReplRecord(data)
+            ReplRecord(data)
 
     def test_normal_put_compressed(self):
         with open(os.path.dirname(os.path.abspath(__file__)) + "/data/test6",'rb') as f:

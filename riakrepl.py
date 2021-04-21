@@ -1,7 +1,7 @@
-#!/usr/bin/env python3.8
 import struct
-import os
 import zlib
+import base64
+import erlang
 
 RIAK_MAGIC_NUMBER = 53
 
@@ -17,7 +17,7 @@ class ReplRecord():
         self.bucket_type = None
         self.bucket = None
         self.key = None
-        self.vectorClocks = None
+        self.vector_clocks = None
         self.siblings_count = 0
         self.head_only = False
         self.value = None
@@ -145,7 +145,8 @@ class ReplRecord():
         fs = '!' + str(clock_length) + 's'
         (clocks,) = struct.unpack_from(fs,self.raw_data, offset=offset)
         offset += struct.calcsize(fs)
-        self.vectorClocks = clocks
+        self.vector_clocks = base64.b64encode(clocks)
+        #self.vector_clocks = erlang.binary_to_term(clocks)
 
         return offset
 
@@ -215,9 +216,10 @@ class ReplRecord():
             fs = '!' + str(val_len) + 's'
             (val,) = struct.unpack_from(fs,self.raw_data, offset=offset)
             offset += struct.calcsize(fs)
+            val = erlang.binary_to_term(val[1:])
 
             # first byte of key and val are effectively meaningless
-            self.metadata.append({key[1:]:val[1:]})
+            self.metadata.append({key[1:]:val})
 
 
     def _getMetaData(self, offset):
