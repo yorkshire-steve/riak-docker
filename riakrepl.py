@@ -86,11 +86,12 @@ class ReplRecord():
         (type_length,) = struct.unpack_from(fs, self.raw_data, offset=offset)
         offset += struct.calcsize(fs)
 
-        # get type name
-        fs = '!' + str(type_length) + 's'
-        (bucket_type,) = struct.unpack_from(fs, self.raw_data, offset=offset)
-        offset += struct.calcsize(fs)
-        self.bucket_type = bucket_type
+        if type_length != 0:
+            # get type name
+            fs = '!' + str(type_length) + 's'
+            (bucket_type,) = struct.unpack_from(fs, self.raw_data, offset=offset)
+            offset += struct.calcsize(fs)
+            self.bucket_type = bucket_type
 
         return offset
 
@@ -101,11 +102,12 @@ class ReplRecord():
         (bucket_length,) = struct.unpack_from(fs, self.raw_data, offset=offset)
         offset += struct.calcsize(fs)
 
-        # get bucket name
-        fs = '!' + str(bucket_length) + 's'
-        (bucket,) = struct.unpack_from(fs, self.raw_data, offset=offset)
-        offset += struct.calcsize(fs)
-        self.bucket = bucket
+        if bucket_length != 0:
+            # get bucket name
+            fs = '!' + str(bucket_length) + 's'
+            (bucket,) = struct.unpack_from(fs, self.raw_data, offset=offset)
+            offset += struct.calcsize(fs)
+            self.bucket = bucket
 
         return offset
 
@@ -116,11 +118,12 @@ class ReplRecord():
         (key_length,) = struct.unpack_from(fs, self.raw_data, offset=offset)
         offset += struct.calcsize(fs)
 
-        # get key name
-        fs = '!' + str(key_length) + 's'
-        (key,) = struct.unpack_from(fs, self.raw_data, offset=offset)
-        offset += struct.calcsize(fs)
-        self.key = key
+        if key_length != 0:
+            # get key name
+            fs = '!' + str(key_length) + 's'
+            (key,) = struct.unpack_from(fs, self.raw_data, offset=offset)
+            offset += struct.calcsize(fs)
+            self.key = key
 
         return offset
 
@@ -172,11 +175,14 @@ class ReplRecord():
             self.head_only = True
 
         # extract value
-        fs = '!' + str(value_length) + 's'
-        (value,) = struct.unpack_from(fs,self.raw_data, offset=offset)
+        fs = '!?' + str(value_length-1) + 's'
+        (is_binary,value) = struct.unpack_from(fs,self.raw_data, offset=offset)
         offset += struct.calcsize(fs)
-        # first byte of value is effectively meaningless
-        self.value = value[1:]
+
+        if is_binary:
+            self.value = value
+        else:
+            self.value = erlang.binary_to_term(value)
 
         return offset
 
@@ -205,21 +211,26 @@ class ReplRecord():
             (key_len,) = struct.unpack_from(fs,self.raw_data, offset=offset)
             offset += struct.calcsize(fs)
 
-            fs = '!' + str(key_len) + 's'
-            (key,) = struct.unpack_from(fs,self.raw_data, offset=offset)
+            fs = '!?' + str(key_len-1) + 's'
+            (is_binary, key) = struct.unpack_from(fs,self.raw_data, offset=offset)
             offset += struct.calcsize(fs)
+
+            if not is_binary:
+                key = erlang.binary_to_term(key)
 
             fs = '!i'
             (val_len,) = struct.unpack_from(fs,self.raw_data, offset=offset)
             offset += struct.calcsize(fs)
 
-            fs = '!' + str(val_len) + 's'
-            (val,) = struct.unpack_from(fs,self.raw_data, offset=offset)
+            fs = '!?' + str(val_len-1) + 's'
+            (is_binary, val) = struct.unpack_from(fs,self.raw_data, offset=offset)
             offset += struct.calcsize(fs)
-            val = erlang.binary_to_term(val[1:])
+
+            if not is_binary:
+                val = erlang.binary_to_term(val)
 
             # first byte of key and val are effectively meaningless
-            self.metadata.append({key[1:]:val})
+            self.metadata.append({key:val})
 
 
     def _getMetaData(self, offset):
