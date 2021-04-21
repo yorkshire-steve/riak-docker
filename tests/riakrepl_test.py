@@ -44,6 +44,7 @@ class TestReplRecord(unittest.TestCase):
         self.assertEqual(rec.bucket_type, b'')
         self.assertEqual(rec.bucket, b'test')
         self.assertEqual(rec.key, b'test')
+        self.assertEqual(rec.tomb_clock, b'g2wAAAACaAJtAAAACL8Aoe8A+zsmaAJhAm4FAHcc8tkOaAJtAAAADL8Aoe8A+0zuAAAAAWgCYQNuBQDVKPLZDmo=')
 
     def test_invalid_checksum(self):
         with open(os.path.dirname(os.path.abspath(__file__)) + "/data/test4",'rb') as f:
