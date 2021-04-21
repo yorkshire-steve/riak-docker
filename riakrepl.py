@@ -14,6 +14,7 @@ class ReplRecord():
         self.is_delete = False
         self.tomb_clock = None
         self.compressed = False
+        self.bucket_type = None
         self.bucket = None
         self.key = None
         self.vectorClocks = None
@@ -41,9 +42,10 @@ class ReplRecord():
         # is this a delete record
         fs = '!?'
         (delete,) = struct.unpack_from(fs, self.raw_data, offset=offset)
+        offset += struct.calcsize(fs)
         self.is_delete = delete
 
-        return struct.calcsize(fs) + offset
+        return offset
 
     def _isValid(self, offset):
         # record type and CRC32 of rest of data
@@ -60,25 +62,52 @@ class ReplRecord():
 
     def _isCompressed(self, offset):
         # compression header
-        fs = '!?'
-        (uncompressed,) = struct.unpack_from(fs, self.raw_data, offset=offset)
-        self.compressed = not uncompressed
+        fs = '!b'
+        (compressed,) = struct.unpack_from(fs, self.raw_data, offset=offset)
+        offset += struct.calcsize(fs)
 
-        return struct.calcsize(fs) + offset
+        if compressed == 16:
+            self.compressed = False
+        elif compressed == 24:
+            self.compressed = True
+        else:
+            raise ValueError("invalid compression flag")
+
+        return offset
+
+    def _decompress(self, offset):
+        self.raw_data = zlib.decompress(self.raw_data[offset:])
+        offset = 0
+        return offset
+
+    def _getBucketType(self, offset):
+        fs = '!i'
+        # get type length
+        (type_length,) = struct.unpack_from(fs, self.raw_data, offset=offset)
+        offset += struct.calcsize(fs)
+
+        # get type name
+        fs = '!' + str(type_length) + 's'
+        (bucket_type,) = struct.unpack_from(fs, self.raw_data, offset=offset)
+        offset += struct.calcsize(fs)
+        self.bucket_type = bucket_type
+
+        return offset
 
     def _getBucket(self, offset):
         # get bucket name
-        fs = '!ii'
-        # get bucket length (first 4 bytes are unused zeroes)
-        (_, bucket_length) = struct.unpack_from(fs, self.raw_data, offset=offset)
+        fs = '!i'
+        # get bucket length
+        (bucket_length,) = struct.unpack_from(fs, self.raw_data, offset=offset)
         offset += struct.calcsize(fs)
 
         # get bucket name
         fs = '!' + str(bucket_length) + 's'
         (bucket,) = struct.unpack_from(fs, self.raw_data, offset=offset)
+        offset += struct.calcsize(fs)
         self.bucket = bucket
 
-        return struct.calcsize(fs) + offset
+        return offset
 
     def _getKey(self, offset):
         # get key name
@@ -90,19 +119,21 @@ class ReplRecord():
         # get key name
         fs = '!' + str(key_length) + 's'
         (key,) = struct.unpack_from(fs, self.raw_data, offset=offset)
+        offset += struct.calcsize(fs)
         self.key = key
 
-        return struct.calcsize(fs) + offset
+        return offset
 
     def _getMagicNumber(self, offset):
         # magic number for Riak object and unused byte
         fs = '!bb'
         (magic,_) = struct.unpack_from(fs, self.raw_data, offset=offset)
+        offset += struct.calcsize(fs)
 
         if magic != RIAK_MAGIC_NUMBER:
-            raise TypeError("Invalid Riak object")
+            raise ValueError("invalid riak object")
 
-        return struct.calcsize(fs) + offset
+        return offset
 
     def _getVectorClocks(self, offset):
         # clocks length
@@ -113,36 +144,38 @@ class ReplRecord():
         # extract vector clocks
         fs = '!' + str(clock_length) + 's'
         (clocks,) = struct.unpack_from(fs,self.raw_data, offset=offset)
+        offset += struct.calcsize(fs)
         self.vectorClocks = clocks
 
-        return struct.calcsize(fs) + offset
+        return offset
 
     def _getNumSiblings(self, offset):
         # number of siblings in record (usually 1)
         fs = '!i'
         (siblings_count,) = struct.unpack_from(fs,self.raw_data, offset=offset)
+        offset += struct.calcsize(fs)
         self.siblings_count = siblings_count
 
         # TODO: Add support for multiple siblings
         if siblings_count != 1:
             raise ValueError("record has multiple siblings")
 
-        return struct.calcsize(fs) + offset
+        return offset
 
     def _getValue(self, offset):
         fs = '!i'
         (value_length,) = struct.unpack_from(fs,self.raw_data, offset=offset)
         offset += struct.calcsize(fs)
 
-        if value_length == 0:
+        if value_length == 1:
             self.head_only = True
-        else:
-            # extract value
-            fs = '!' + str(value_length) + 's'
-            (value,) = struct.unpack_from(fs,self.raw_data, offset=offset)
-            offset += struct.calcsize(fs)
-            # first byte of value is effectively meaningless
-            self.value = value[1:]
+
+        # extract value
+        fs = '!' + str(value_length) + 's'
+        (value,) = struct.unpack_from(fs,self.raw_data, offset=offset)
+        offset += struct.calcsize(fs)
+        # first byte of value is effectively meaningless
+        self.value = value[1:]
 
         return offset
 
@@ -151,20 +184,20 @@ class ReplRecord():
 
         fs = '!iiib'
         (lm_mega, lm_secs, lm_micro, vtag_len) = struct.unpack_from(fs,self.raw_data, offset=offset)
-        self.last_modified = str(lm_mega) + str(lm_secs) + '.' + str(lm_micro)
         offset += struct.calcsize(fs)
+        self.last_modified = str(lm_mega) + str(lm_secs) + '.' + str(lm_micro)
 
         # extract vtag
         fs = '!' + str(vtag_len) + 's'
         (vtag,) = struct.unpack_from(fs,self.raw_data, offset=offset)
-        self.vtag = vtag
         offset += struct.calcsize(fs)
+        self.vtag = vtag
 
         # extract deleted (again?)
         fs = '!?'
         (deleted,) = struct.unpack_from(fs,self.raw_data, offset=offset)
-        self.key_deleted = deleted
         offset += struct.calcsize(fs)
+        self.key_deleted = deleted
 
         while offset < offset_finish:
             fs = '!i'
@@ -204,9 +237,10 @@ class ReplRecord():
         # extract tomb clock
         fs = '!' + str(tomb_clock_len) + 's'
         (tomb_clock,) = struct.unpack_from(fs,self.raw_data, offset=offset)
+        offset += struct.calcsize(fs)
         self.tomb_clock = tomb_clock
 
-        return struct.calcsize(fs) + offset
+        return offset
 
     def decode(self):
         offset = self._isEmpty()
@@ -222,8 +256,12 @@ class ReplRecord():
         offset = self._isValid(offset)
 
         offset = self._isCompressed(offset)
+        offset = self._getBucketType(offset)
         offset = self._getBucket(offset)
         offset = self._getKey(offset)
+
+        if self.compressed:
+            offset = self._decompress(offset)
 
         offset = self._getMagicNumber(offset)
         offset = self._getVectorClocks(offset)
@@ -234,13 +272,4 @@ class ReplRecord():
             offset = self._getMetaData(offset)
 
         if offset != len(self.raw_data):
-            raise ValueError("Did not fully decode record")
-
-
-if __name__ == "__main__":
-    with open(os.path.dirname(os.path.abspath(__file__)) + "/tests/data/test3",'rb') as f:
-        data = f.read()
-
-    rec = ReplRecord(data)
-
-    print(rec.tomb_clock)
+            raise ValueError("record too long")
