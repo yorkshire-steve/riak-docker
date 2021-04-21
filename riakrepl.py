@@ -62,7 +62,7 @@ class ReplRecord():
 
     def _isCompressed(self, offset):
         # compression header
-        fs = '!b'
+        fs = '!B'
         (compressed,) = struct.unpack_from(fs, self.raw_data, offset=offset)
         offset += struct.calcsize(fs)
 
@@ -81,7 +81,7 @@ class ReplRecord():
         return offset
 
     def _getBucketType(self, offset):
-        fs = '!i'
+        fs = '!I'
         # get type length
         (type_length,) = struct.unpack_from(fs, self.raw_data, offset=offset)
         offset += struct.calcsize(fs)
@@ -97,7 +97,7 @@ class ReplRecord():
 
     def _getBucket(self, offset):
         # get bucket name
-        fs = '!i'
+        fs = '!I'
         # get bucket length
         (bucket_length,) = struct.unpack_from(fs, self.raw_data, offset=offset)
         offset += struct.calcsize(fs)
@@ -113,7 +113,7 @@ class ReplRecord():
 
     def _getKey(self, offset):
         # get key name
-        fs = '!i'
+        fs = '!I'
         # get key length
         (key_length,) = struct.unpack_from(fs, self.raw_data, offset=offset)
         offset += struct.calcsize(fs)
@@ -129,18 +129,21 @@ class ReplRecord():
 
     def _getMagicNumber(self, offset):
         # magic number for Riak object and unused byte
-        fs = '!bb'
-        (magic,_) = struct.unpack_from(fs, self.raw_data, offset=offset)
+        fs = '!BB'
+        (magic, obj_version) = struct.unpack_from(fs, self.raw_data, offset=offset)
         offset += struct.calcsize(fs)
 
         if magic != RIAK_MAGIC_NUMBER:
             raise ValueError("invalid riak object")
 
+        if obj_version != 1:
+            raise ValueError("only support v1 riak objects")
+
         return offset
 
     def _getVectorClocks(self, offset):
         # clocks length
-        fs = '!i'
+        fs = '!I'
         (clock_length,) = struct.unpack_from(fs,self.raw_data, offset=offset)
         offset += struct.calcsize(fs)
 
@@ -155,7 +158,7 @@ class ReplRecord():
 
     def _getNumSiblings(self, offset):
         # number of siblings in record (usually 1)
-        fs = '!i'
+        fs = '!I'
         (siblings_count,) = struct.unpack_from(fs,self.raw_data, offset=offset)
         offset += struct.calcsize(fs)
         self.siblings_count = siblings_count
@@ -167,7 +170,7 @@ class ReplRecord():
         return offset
 
     def _getValue(self, offset):
-        fs = '!i'
+        fs = '!I'
         (value_length,) = struct.unpack_from(fs,self.raw_data, offset=offset)
         offset += struct.calcsize(fs)
 
@@ -189,7 +192,7 @@ class ReplRecord():
     def _extractMetaData(self, offset, metadata_length):
         offset_finish = offset + metadata_length
 
-        fs = '!iiib'
+        fs = '!IIIB'
         (lm_mega, lm_secs, lm_micro, vtag_len) = struct.unpack_from(fs,self.raw_data, offset=offset)
         offset += struct.calcsize(fs)
         self.last_modified = str(lm_mega) + str(lm_secs) + '.' + str(lm_micro)
@@ -207,7 +210,7 @@ class ReplRecord():
         self.key_deleted = deleted
 
         while offset < offset_finish:
-            fs = '!i'
+            fs = '!I'
             (key_len,) = struct.unpack_from(fs,self.raw_data, offset=offset)
             offset += struct.calcsize(fs)
 
@@ -218,7 +221,7 @@ class ReplRecord():
             if not is_binary:
                 key = erlang.binary_to_term(key)
 
-            fs = '!i'
+            fs = '!I'
             (val_len,) = struct.unpack_from(fs,self.raw_data, offset=offset)
             offset += struct.calcsize(fs)
 
@@ -234,7 +237,7 @@ class ReplRecord():
 
 
     def _getMetaData(self, offset):
-        fs = '!i'
+        fs = '!I'
         (metadata_length,) = struct.unpack_from(fs,self.raw_data, offset=offset)
         offset += struct.calcsize(fs)
 
@@ -243,7 +246,7 @@ class ReplRecord():
         return offset + metadata_length
 
     def _getTombClock(self, offset):
-        fs = '!i'
+        fs = '!I'
         (tomb_clock_len,) = struct.unpack_from(fs,self.raw_data, offset=offset)
         offset += struct.calcsize(fs)
 
