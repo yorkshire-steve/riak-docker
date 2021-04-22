@@ -1,0 +1,2 @@
+erlang-py==2.0.1
+pylint
