@@ -26,45 +26,53 @@ class ReplRecord():
         self.key_deleted = False
         self.metadata = []
 
+        self._offset = 0
+
         self.decode()
 
+    def _extractValue(self, format_string):
+        (val,) = struct.unpack_from(format_string, self.raw_data, offset=self._offset)
+        self._offset += struct.calcsize(format_string)
+        return val
+
+    def _extractBool(self):
+        return self._extractValue('!?')
+
+    def _extractUINT8(self):
+        return self._extractValue('!B')
+
+    def _extractUINT32(self):
+        return self._extractValue('!I')
+
+    def _extractStr(self, str_len):
+        return self._extractValue('!' + str(str_len) + 's')
+
+    def _extractMaybeBinary(self, value_length):
+        is_binary = self._extractBool()
+        val = self._extractStr(value_length-1)
+
+        if is_binary:
+            return val
+        else:
+            return erlang.binary_to_term(val)
+
     def _isEmpty(self):
-        # check if repl record is empty
-        fs = '!?'
-        (not_empty,) = struct.unpack_from(fs, self.raw_data, offset=0)
+        not_empty = self._extractBool()
 
         if not_empty:
             self.empty = False
 
-        return struct.calcsize(fs)
+    def _isDelete(self):
+        self.is_delete = self._extractBool()
 
-    def _isDelete(self, offset):
-        # is this a delete record
-        fs = '!?'
-        (delete,) = struct.unpack_from(fs, self.raw_data, offset=offset)
-        offset += struct.calcsize(fs)
-        self.is_delete = delete
+    def _isValid(self):
+        self.crc = self._extractUINT32()
 
-        return offset
-
-    def _isValid(self, offset):
-        # record type and CRC32 of rest of data
-        fs = '!I'
-        (crc,) = struct.unpack_from(fs, self.raw_data, offset=offset)
-        offset += struct.calcsize(fs)
-
-        self.crc = crc
-
-        if crc != zlib.crc32(self.raw_data[offset:]):
+        if self.crc != zlib.crc32(self.raw_data[self._offset:]):
             raise ValueError("invalid checksum")
 
-        return offset
-
-    def _isCompressed(self, offset):
-        # compression header
-        fs = '!B'
-        (compressed,) = struct.unpack_from(fs, self.raw_data, offset=offset)
-        offset += struct.calcsize(fs)
+    def _isCompressed(self):
+        compressed = self._extractUINT8()
 
         if compressed == 16:
             self.compressed = False
@@ -73,219 +81,118 @@ class ReplRecord():
         else:
             raise ValueError("invalid compression flag")
 
-        return offset
+    def _decompress(self):
+        self.raw_data = zlib.decompress(self.raw_data[self._offset:])
+        self._offset = 0
 
-    def _decompress(self, offset):
-        self.raw_data = zlib.decompress(self.raw_data[offset:])
-        offset = 0
-        return offset
-
-    def _getBucketType(self, offset):
-        fs = '!I'
-        # get type length
-        (type_length,) = struct.unpack_from(fs, self.raw_data, offset=offset)
-        offset += struct.calcsize(fs)
+    def _getBucketType(self):
+        type_length = self._extractUINT32()
 
         if type_length != 0:
-            # get type name
-            fs = '!' + str(type_length) + 's'
-            (bucket_type,) = struct.unpack_from(fs, self.raw_data, offset=offset)
-            offset += struct.calcsize(fs)
-            self.bucket_type = bucket_type
+            self.bucket_type = self._extractStr(type_length)
 
-        return offset
-
-    def _getBucket(self, offset):
-        # get bucket name
-        fs = '!I'
-        # get bucket length
-        (bucket_length,) = struct.unpack_from(fs, self.raw_data, offset=offset)
-        offset += struct.calcsize(fs)
+    def _getBucket(self):
+        bucket_length = self._extractUINT32()
 
         if bucket_length != 0:
-            # get bucket name
-            fs = '!' + str(bucket_length) + 's'
-            (bucket,) = struct.unpack_from(fs, self.raw_data, offset=offset)
-            offset += struct.calcsize(fs)
-            self.bucket = bucket
+            self.bucket = self._extractStr(bucket_length)
 
-        return offset
-
-    def _getKey(self, offset):
-        # get key name
-        fs = '!I'
-        # get key length
-        (key_length,) = struct.unpack_from(fs, self.raw_data, offset=offset)
-        offset += struct.calcsize(fs)
+    def _getKey(self):
+        key_length = self._extractUINT32()
 
         if key_length != 0:
-            # get key name
-            fs = '!' + str(key_length) + 's'
-            (key,) = struct.unpack_from(fs, self.raw_data, offset=offset)
-            offset += struct.calcsize(fs)
-            self.key = key
+            self.key = self._extractStr(key_length)
 
-        return offset
-
-    def _getMagicNumber(self, offset):
-        # magic number for Riak object and unused byte
-        fs = '!BB'
-        (magic, obj_version) = struct.unpack_from(fs, self.raw_data, offset=offset)
-        offset += struct.calcsize(fs)
+    def _getMagicNumber(self):
+        magic = self._extractUINT8()
 
         if magic != RIAK_MAGIC_NUMBER:
             raise ValueError("invalid riak object")
 
+        obj_version = self._extractUINT8()
+
         if obj_version != 1:
             raise ValueError("only support v1 riak objects")
 
-        return offset
+    def _getVectorClocks(self):
+        clock_length = self._extractUINT32()
 
-    def _getVectorClocks(self, offset):
-        # clocks length
-        fs = '!I'
-        (clock_length,) = struct.unpack_from(fs,self.raw_data, offset=offset)
-        offset += struct.calcsize(fs)
+        if clock_length != 0:
+            self.vector_clocks = base64.b64encode(self._extractStr(clock_length))
 
-        # extract vector clocks
-        fs = '!' + str(clock_length) + 's'
-        (clocks,) = struct.unpack_from(fs,self.raw_data, offset=offset)
-        offset += struct.calcsize(fs)
-        self.vector_clocks = base64.b64encode(clocks)
-        #self.vector_clocks = erlang.binary_to_term(clocks)
-
-        return offset
-
-    def _getNumSiblings(self, offset):
-        # number of siblings in record (usually 1)
-        fs = '!I'
-        (siblings_count,) = struct.unpack_from(fs,self.raw_data, offset=offset)
-        offset += struct.calcsize(fs)
-        self.siblings_count = siblings_count
+    def _getNumSiblings(self):
+        self.siblings_count = self._extractUINT32()
 
         # TODO: Add support for multiple siblings
-        if siblings_count != 1:
+        if self.siblings_count != 1:
             raise ValueError("record has multiple siblings")
 
-        return offset
-
-    def _getValue(self, offset):
-        fs = '!I'
-        (value_length,) = struct.unpack_from(fs,self.raw_data, offset=offset)
-        offset += struct.calcsize(fs)
+    def _getValue(self):
+        value_length = self._extractUINT32()
 
         if value_length == 1:
             self.head_only = True
 
-        # extract value
-        fs = '!?' + str(value_length-1) + 's'
-        (is_binary,value) = struct.unpack_from(fs,self.raw_data, offset=offset)
-        offset += struct.calcsize(fs)
+        self.value = self._extractMaybeBinary(value_length)
 
-        if is_binary:
-            self.value = value
-        else:
-            self.value = erlang.binary_to_term(value)
+    def _getMetaData(self):
+        metadata_length = self._extractUINT32()
+        offset_finish = self._offset + metadata_length
 
-        return offset
-
-    def _extractMetaData(self, offset, metadata_length):
-        offset_finish = offset + metadata_length
-
-        fs = '!IIIB'
-        (lm_mega, lm_secs, lm_micro, vtag_len) = struct.unpack_from(fs,self.raw_data, offset=offset)
-        offset += struct.calcsize(fs)
+        lm_mega = self._extractUINT32()
+        lm_secs = self._extractUINT32()
+        lm_micro = self._extractUINT32()
         self.last_modified = str(lm_mega) + str(lm_secs) + '.' + str(lm_micro)
 
-        # extract vtag
-        fs = '!' + str(vtag_len) + 's'
-        (vtag,) = struct.unpack_from(fs,self.raw_data, offset=offset)
-        offset += struct.calcsize(fs)
-        self.vtag = vtag
+        vtag_len = self._extractUINT8()
+        self.vtag = self._extractStr(vtag_len)
 
-        # extract deleted (again?)
-        fs = '!?'
-        (deleted,) = struct.unpack_from(fs,self.raw_data, offset=offset)
-        offset += struct.calcsize(fs)
-        self.key_deleted = deleted
+        self.key_deleted = self._extractBool()
 
-        while offset < offset_finish:
-            fs = '!I'
-            (key_len,) = struct.unpack_from(fs,self.raw_data, offset=offset)
-            offset += struct.calcsize(fs)
+        # extract metadata key/value pairs
+        while self._offset < offset_finish:
+            key_len = self._extractUINT32()
+            key = self._extractMaybeBinary(key_len)
 
-            fs = '!?' + str(key_len-1) + 's'
-            (is_binary, key) = struct.unpack_from(fs,self.raw_data, offset=offset)
-            offset += struct.calcsize(fs)
+            val_len = self._extractUINT32()
+            val = self._extractMaybeBinary(val_len)
 
-            if not is_binary:
-                key = erlang.binary_to_term(key)
-
-            fs = '!I'
-            (val_len,) = struct.unpack_from(fs,self.raw_data, offset=offset)
-            offset += struct.calcsize(fs)
-
-            fs = '!?' + str(val_len-1) + 's'
-            (is_binary, val) = struct.unpack_from(fs,self.raw_data, offset=offset)
-            offset += struct.calcsize(fs)
-
-            if not is_binary:
-                val = erlang.binary_to_term(val)
-
-            # first byte of key and val are effectively meaningless
             self.metadata.append({key:val})
 
+    def _getTombClock(self):
+        tomb_clock_len = self._extractUINT32()
 
-    def _getMetaData(self, offset):
-        fs = '!I'
-        (metadata_length,) = struct.unpack_from(fs,self.raw_data, offset=offset)
-        offset += struct.calcsize(fs)
-
-        self._extractMetaData(offset, metadata_length)
-
-        return offset + metadata_length
-
-    def _getTombClock(self, offset):
-        fs = '!I'
-        (tomb_clock_len,) = struct.unpack_from(fs,self.raw_data, offset=offset)
-        offset += struct.calcsize(fs)
-
-        # extract tomb clock
-        fs = '!' + str(tomb_clock_len) + 's'
-        (tomb_clock,) = struct.unpack_from(fs,self.raw_data, offset=offset)
-        offset += struct.calcsize(fs)
-        self.tomb_clock = base64.b64encode(tomb_clock)
-
-        return offset
+        if tomb_clock_len != 0:
+            self.tomb_clock = base64.b64encode(self._extractStr(tomb_clock_len))
 
     def decode(self):
-        offset = self._isEmpty()
+        self._isEmpty()
 
         if self.empty:
             return
 
-        offset = self._isDelete(offset)
+        self._isDelete()
 
         if self.is_delete:
-            offset = self._getTombClock(offset)
+            self._getTombClock()
 
-        offset = self._isValid(offset)
+        self._isValid()
 
-        offset = self._isCompressed(offset)
-        offset = self._getBucketType(offset)
-        offset = self._getBucket(offset)
-        offset = self._getKey(offset)
+        self._isCompressed()
+        self._getBucketType()
+        self._getBucket()
+        self._getKey()
 
         if self.compressed:
-            offset = self._decompress(offset)
+            self._decompress()
 
-        offset = self._getMagicNumber(offset)
-        offset = self._getVectorClocks(offset)
-        offset = self._getNumSiblings(offset)
+        self._getMagicNumber()
+        self._getVectorClocks()
+        self._getNumSiblings()
 
         for _ in range(self.siblings_count):
-            offset = self._getValue(offset)
-            offset = self._getMetaData(offset)
+            self._getValue()
+            self._getMetaData()
 
-        if offset != len(self.raw_data):
+        if self._offset != len(self.raw_data):
             raise ValueError("record too long")
