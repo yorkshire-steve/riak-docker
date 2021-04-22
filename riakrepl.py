@@ -5,6 +5,22 @@ import erlang
 
 RIAK_MAGIC_NUMBER = 53
 
+class TooManySiblingsError(Exception):
+    """Exception raised for too many siblings in repl record.
+
+    Attributes:
+        num_sublings -- number of siblings in record
+        message -- explanation of the error
+    """
+
+    def __init__(self, num_sublings, message="Too many siblings in record"):
+        self.num_sublings = num_sublings
+        self.message = message
+        super().__init__(self.message)
+
+    def __str__(self):
+        return f'siblings={self.num_sublings} {self.message}'
+
 class ReplRecord():
 
     def __init__(self, raw_data=None):
@@ -125,7 +141,7 @@ class ReplRecord():
 
         # TODO: Add support for multiple siblings
         if self.siblings_count != 1:
-            raise ValueError("record has multiple siblings")
+            raise TooManySiblingsError(self.siblings_count)
 
     def _getValue(self):
         value_length = self._extractUINT32()
