@@ -24,7 +24,8 @@ class TooManySiblingsError(Exception):
 class ReplRecord():
 
     def __init__(self, raw_data=None):
-        self.raw_data = raw_data
+        self._raw_data = raw_data
+
         self.empty = True
         self.crc = 0
         self.is_delete = False
@@ -47,7 +48,7 @@ class ReplRecord():
         self.decode()
 
     def _extractValue(self, format_string):
-        (val,) = struct.unpack_from(format_string, self.raw_data, offset=self._offset)
+        (val,) = struct.unpack_from(format_string, self._raw_data, offset=self._offset)
         self._offset += struct.calcsize(format_string)
         return val
 
@@ -84,7 +85,7 @@ class ReplRecord():
     def _isValid(self):
         self.crc = self._extractUINT32()
 
-        if self.crc != zlib.crc32(self.raw_data[self._offset:]):
+        if self.crc != zlib.crc32(self._raw_data[self._offset:]):
             raise ValueError("invalid checksum")
 
     def _isCompressed(self):
@@ -98,7 +99,7 @@ class ReplRecord():
             raise ValueError("invalid compression flag")
 
     def _decompress(self):
-        self.raw_data = zlib.decompress(self.raw_data[self._offset:])
+        self._raw_data = zlib.decompress(self._raw_data[self._offset:])
         self._offset = 0
 
     def _getBucketType(self):
@@ -210,5 +211,5 @@ class ReplRecord():
             self._getValue()
             self._getMetaData()
 
-        if self._offset != len(self.raw_data):
+        if self._offset != len(self._raw_data):
             raise ValueError("record too long")
