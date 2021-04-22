@@ -213,3 +213,5 @@ class ReplRecord():
 
         if self._offset != len(self._raw_data):
             raise ValueError("record too long")
+
+        del self._raw_data
