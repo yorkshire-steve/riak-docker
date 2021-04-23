@@ -1,10 +1,13 @@
 import unittest
 import os
-from riakrepl import ReplRecord
+from record import ReplRecord
 
 class TestReplRecord(unittest.TestCase):
 
     def test_normal_put(self):
+        """
+        Test a normal PUT record can be decoded
+        """
         with open(os.path.dirname(os.path.abspath(__file__)) + "/data/test",'rb') as f:
             data = f.read()
 
@@ -24,6 +27,9 @@ class TestReplRecord(unittest.TestCase):
         self.assertIn({b'content-type': b'application/json'}, rec.metadata)
 
     def test_empty(self):
+        """
+        Test a replication record from empty queue can be decoded
+        """
         with open(os.path.dirname(os.path.abspath(__file__)) + "/data/test2",'rb') as f:
             data = f.read()
 
@@ -32,6 +38,9 @@ class TestReplRecord(unittest.TestCase):
         self.assertTrue(rec.empty)
 
     def test_delete(self):
+        """
+        Test a DELETE record can be decoded
+        """
         with open(os.path.dirname(os.path.abspath(__file__)) + "/data/test3",'rb') as f:
             data = f.read()
 
@@ -47,6 +56,9 @@ class TestReplRecord(unittest.TestCase):
         self.assertEqual(rec.tomb_clock, b'g2wAAAACaAJtAAAACL8Aoe8A+zsmaAJhAm4FAHcc8tkOaAJtAAAADL8Aoe8A+0zuAAAAAWgCYQNuBQDVKPLZDmo=')
 
     def test_invalid_checksum(self):
+        """
+        Test a record with invalid checksum raises exception
+        """
         with open(os.path.dirname(os.path.abspath(__file__)) + "/data/test4",'rb') as f:
             data = f.read()
 
@@ -54,6 +66,9 @@ class TestReplRecord(unittest.TestCase):
             ReplRecord(data)
 
     def test_invalid_magic_number(self):
+        """
+        Test a record with invalid Riak object magic number raises exception
+        """
         with open(os.path.dirname(os.path.abspath(__file__)) + "/data/test5",'rb') as f:
             data = f.read()
 
@@ -61,6 +76,9 @@ class TestReplRecord(unittest.TestCase):
             ReplRecord(data)
 
     def test_normal_put_compressed(self):
+        """
+        Test a normal PUT record with compression enabled can be decoded
+        """
         with open(os.path.dirname(os.path.abspath(__file__)) + "/data/test6",'rb') as f:
             data = f.read()
 
@@ -78,6 +96,9 @@ class TestReplRecord(unittest.TestCase):
         self.assertEqual(rec.vtag, b'e11V4Gy3vcpOBIVIuSmke')
 
     def test_normal_put_with_bucket_type(self):
+        """
+        Test a normal PUT with bucket type can be decoded
+        """
         with open(os.path.dirname(os.path.abspath(__file__)) + "/data/test7",'rb') as f:
             data = f.read()
 

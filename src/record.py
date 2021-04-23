@@ -48,7 +48,10 @@ class ReplRecord():
         self.decode()
 
     def _extractValue(self, format_string):
-        (val,) = struct.unpack_from(format_string, self._raw_data, offset=self._offset)
+        try:
+            (val,) = struct.unpack_from(format_string, self._raw_data, offset=self._offset)
+        except struct.error as e:
+            raise ValueError(e)
         self._offset += struct.calcsize(format_string)
         return val
 
@@ -71,7 +74,10 @@ class ReplRecord():
         if is_binary:
             return val
         else:
-            return erlang.binary_to_term(val)
+            try:
+                return erlang.binary_to_term(val)
+            except Exception as e:
+                raise ValueError(e)
 
     def _isEmpty(self):
         not_empty = self._extractBool()
