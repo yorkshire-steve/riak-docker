@@ -2,6 +2,7 @@ import unittest
 from sink import ReplSink
 import urllib3
 import time
+import os
 
 class TestReplSink(unittest.TestCase):
 
@@ -9,7 +10,8 @@ class TestReplSink(unittest.TestCase):
         """
         Setup sink and confirm replication queue is empty
         """
-        self.sink = ReplSink(host='localhost', port=8098, queue='q1_ttaaefs')
+        self.host = os.environ['RIAK_HOST']
+        self.sink = ReplSink(host=self.host, port=8098, queue='q1_ttaaefs')
         self.test_data = b'{"test":"data"}'
         self.http = urllib3.PoolManager()
 
@@ -26,12 +28,12 @@ class TestReplSink(unittest.TestCase):
         assert rec.empty
 
     def put_test_object(self, bucket: str, key: str):
-        url = f"http://localhost:8098/buckets/{bucket}/keys/{key}"
+        url = f"http://{self.host}:8098/buckets/{bucket}/keys/{key}"
         headers = {'Content-type':'application/json'}
         self.http.request("PUT", url, headers=headers, body=self.test_data, retries=False)
 
     def delete_test_object(self, bucket: str, key: str):
-        url = f"http://localhost:8098/buckets/{bucket}/keys/{key}"
+        url = f"http://{self.host}:8098/buckets/{bucket}/keys/{key}"
         self.http.request("DELETE", url, retries=False)
 
     def assert_test_record(self, rec, bucket, key):
