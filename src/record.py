@@ -47,7 +47,7 @@ class ReplRecord():
 
         self.decode()
 
-    def _extractValue(self, format_string):
+    def _extractValue(self, format_string: str):
         try:
             (val,) = struct.unpack_from(format_string, self._raw_data, offset=self._offset)
         except struct.error as e:
@@ -64,10 +64,10 @@ class ReplRecord():
     def _extractUINT32(self):
         return self._extractValue('!I')
 
-    def _extractStr(self, str_len):
+    def _extractStr(self, str_len: int):
         return self._extractValue('!' + str(str_len) + 's')
 
-    def _extractMaybeBinary(self, value_length):
+    def _extractMaybeBinary(self, value_length: int):
         is_binary = self._extractBool()
         val = self._extractStr(value_length-1)
 
