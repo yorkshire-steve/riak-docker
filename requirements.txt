@@ -1,3 +1,4 @@
 erlang-py==2.0.1
 pylint
 urllib3
+boto3

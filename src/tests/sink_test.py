@@ -10,7 +10,7 @@ class TestReplSink(unittest.TestCase):
         """
         Setup sink and confirm replication queue is empty
         """
-        self.host = os.environ['RIAK_HOST']
+        self.host = os.getenv('RIAK_HOST', 'localhost')
         self.sink = ReplSink(host=self.host, port=8098, queue='q1_ttaaefs')
         self.test_data = b'{"test":"data"}'
         self.http = urllib3.PoolManager()
