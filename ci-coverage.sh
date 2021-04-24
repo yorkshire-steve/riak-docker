@@ -12,4 +12,6 @@ echo "Waiting for Riak to fully start..."
 docker exec $DOCKER_ID riak-admin wait-for-service riak_kv
 coverage run --source=src --omit=src/tests/*,*/__init__.py -m unittest discover -s tests -p *_test.py
 coverage report -m
+docker stop $DOCKER_ID
+docker rm $DOCKER_ID
 popd
