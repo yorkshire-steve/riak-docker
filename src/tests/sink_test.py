@@ -13,7 +13,7 @@ class TestReplSink(unittest.TestCase):
         self.host = os.getenv('RIAK_HOST', 'localhost')
         self.sink = ReplSink(host=self.host, port=8098, queue='q1_ttaaefs')
         self.test_data = b'{"test":"data"}'
-        self.http = urllib3.PoolManager()
+        self.http = urllib3.HTTPConnectionPool(host=self.host, port=8098, retries=False)
 
         empty = False
         while not empty:
@@ -25,6 +25,7 @@ class TestReplSink(unittest.TestCase):
         Assert replication queue is empty after every test
         """
         rec = self.sink.fetch()
+        self.http.close()
         assert rec.empty
 
     def put_test_object(self, bucket: str, key: str):

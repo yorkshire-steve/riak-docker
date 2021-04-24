@@ -10,6 +10,9 @@ class ReplSink:
         self._url = f"http://{self._host}:{self._port}/queuename/{self._queue_name}?object_format=internal"
         self._http = urllib3.HTTPConnectionPool(host=self._host, port=self._port, retries=False)
     
+    def __del__(self):
+        self._http.close()
+
     def fetch(self):
         r = self._http.request("GET", self._url)
         if r.status != 200:

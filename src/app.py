@@ -1,6 +1,7 @@
 from sink import ReplSink
 from record import ReplRecord
 from boto3 import resource
+from boto3.dynamodb.conditions import Attr
 from botocore.config import Config
 import os
 import time
@@ -8,6 +9,7 @@ import signal
 import logging
 import json
 from urllib3.exceptions import HTTPError
+from decimal import Decimal
 
 class App:
     def __init__(self):
@@ -65,24 +67,17 @@ class App:
             table.wait_until_exists()
         return table
 
-    def get_last_modified(self, key: str):
-        try:
-            item = self.table.get_item(Key={'pkey':key}, AttributesToGet=['_riak_lm'])
-        except:
-            return ""
-        else:
-            if 'Item' in item:
-                return item['Item']['_riak_lm']
-            return ""
-
     def update_item(self, key: str, rec: ReplRecord):
         try:
             data = json.loads(rec.value)
             data['pkey'] = key
-            data['_riak_lm'] = rec.last_modified
+            data['_riak_lm'] = Decimal(rec.last_modified)
             data['_riak_vclocks'] = rec.vector_clocks.decode('utf-8')
             self.logger.info(f"Putting item {key}")
-            self.table.put_item(Item=data)
+            condition = Attr('_riak_lm').lt(data['_riak_lm']) | Attr('_riak_lm').not_exists()
+            self.table.put_item(Item=data, ConditionExpression=condition)
+        except self.table.meta.client.exceptions.ConditionalCheckFailedException:
+            self.logger.warning(f"Put for key={key} failed due to existing last modified > {data['_riak_lm']}")
         except Exception as e:
             self.logger.error(e)
 
@@ -90,13 +85,9 @@ class App:
         bucket = rec.bucket.decode('utf-8')
         key = rec.key.decode('utf-8')
         if {b'content-type': b'application/json'} in rec.metadata and bucket == self.bucket_filter:
-            last_modified = self.get_last_modified(key)
-            if rec.last_modified > last_modified:
-                self.update_item(key, rec)
-            else:
-                self.logger.info(f"Not updating {key} because existing_last_modified={last_modified} > new_last_modified={rec.last_modified}")
+            self.update_item(key, rec)
         else:
-            self.logger.warn(f"Key not JSON or wrong bucket {bucket} {key}")
+            self.logger.warning(f"Key not JSON or wrong bucket {bucket} {key}")
 
     def signal_handler(self, sign_num, frame):
         self.shutdown = True
@@ -113,18 +104,17 @@ class App:
                 rec = self.sink.fetch()
             except HTTPError as e:
                 self.logger.error(e)
-                self.logger.warn("Riak failure, backing off for 5 seconds")
+                self.logger.warning("Riak failure, backing off for 5 seconds")
                 riak_failure = True
                 time.sleep(5)
             except Exception as e:
-                self.logger.warn(e)
+                self.logger.warning(e)
             else:
                 if riak_failure:
                     self.logger.info("Recovered from Riak failure")
                     riak_failure = False
                 if not rec.empty:
                     self.process_record(rec)
-                
                 if rec.empty:
                     time.sleep(0.1)
         
