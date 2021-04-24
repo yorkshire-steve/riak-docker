@@ -123,5 +123,14 @@ class TestReplSink(unittest.TestCase):
         self.assertGreaterEqual(float(rec.last_modified), before_time)
         self.assertLessEqual(float(rec.last_modified), after_time)
 
+    def test_invalid_response_code(self):
+        """
+        Test exception gets raised when Riak returns invalid response code
+        """
+        sink = ReplSink(host=self.host, port=8098, queue='invalid/q1_ttaaefs')
+
+        with self.assertRaises(urllib3.exceptions.HTTPError):
+            sink.fetch()
+
 if __name__ == '__main__':
     unittest.main()

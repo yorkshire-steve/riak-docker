@@ -9,16 +9,19 @@ services:
         image: "amazon/dynamodb-local:latest"
         container_name: dynamodb-local
         working_dir: /home/dynamodblocal
-    app:
-        build:
-            context: .
-            dockerfile: docker-app/Dockerfile
-        environment:
-            AWS_ACCESS_KEY_ID: 'DUMMYIDEXAMPLE'
-            AWS_SECRET_ACCESS_KEY: 'DUMMYEXAMPLEKEY'
-            AWS_DEFAULT_REGION: 'eu-west-2'
-            DYNAMO_ENDPOINT_URL: 'http://dynamodb-local:8000'
-            RIAK_HOST: 'riak'
-        depends_on:
-            - riak
-            - dynamodb-local
+        ports:
+            - "0.0.0.0:8000:8000"
+    # app:
+    #     build:
+    #         context: .
+    #         dockerfile: docker-app/Dockerfile
+    #     environment:
+    #         AWS_ACCESS_KEY_ID: 'DUMMYIDEXAMPLE'
+    #         AWS_SECRET_ACCESS_KEY: 'DUMMYEXAMPLEKEY'
+    #         AWS_DEFAULT_REGION: 'eu-west-2'
+    #         DYNAMODB_ENDPOINT_URL: 'http://dynamodb-local:8000'
+    #         DYNAMODB_TABLE: 'test'
+    #         RIAK_HOST: 'riak'
+    #     depends_on:
+    #         - riak
+    #         - dynamodb-local

@@ -14,6 +14,9 @@
     "python.testing.unittestEnabled": true,
     "python.pythonPath": "venv/bin/python",
     "terminal.integrated.env.linux" : {
-        "PYTHONPATH":"${workspaceFolder}/src"
+        "PYTHONPATH":"${workspaceFolder}/src",
+        "AWS_ACCESS_KEY_ID": "DUMMYIDEXAMPLE",
+        "AWS_SECRET_ACCESS_KEY": "DUMMYEXAMPLEKEY",
+        "AWS_DEFAULT_REGION": "eu-west-2"
     }
 }

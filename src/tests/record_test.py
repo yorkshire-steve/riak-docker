@@ -1,6 +1,6 @@
 import unittest
 import os
-from record import ReplRecord
+from record import ReplRecord, TooManySiblingsError
 
 class TestReplRecord(unittest.TestCase):
 
@@ -114,6 +114,47 @@ class TestReplRecord(unittest.TestCase):
         self.assertEqual(rec.value, b'{"test":"data"}')
         self.assertEqual(rec.last_modified, '1618999132.471832')
         self.assertEqual(rec.vtag, b'5NnOEeAXmRYucRkHl8KEXy')
+
+    def test_too_long_record(self):
+        """
+        Test an invalid record (too long) raises exception
+        """
+        with open(os.path.dirname(os.path.abspath(__file__)) + "/data/test8",'rb') as f:
+            data = f.read()
+
+        with self.assertRaisesRegex(ValueError,'record too long'):
+            ReplRecord(data)
+
+    def test_too_many_siblings(self):
+        """
+        Test a record with more than 1 sibling raises exception
+        """
+        with open(os.path.dirname(os.path.abspath(__file__)) + "/data/test9",'rb') as f:
+            data = f.read()
+
+        with self.assertRaisesRegex(TooManySiblingsError, 'siblings=2 Too many siblings in record'):
+            ReplRecord(data)
+
+    def test_invalid_object_version(self):
+        """
+        Test a record with an invalid riak object version raises exception
+        """
+        with open(os.path.dirname(os.path.abspath(__file__)) + "/data/test10",'rb') as f:
+            data = f.read()
+
+        with self.assertRaisesRegex(ValueError,'only support v1 riak objects'):
+            ReplRecord(data)
+
+    def test_invalid_compression_flag(self):
+        """
+        Test a record with invalid compression flag raises exception
+        """
+        with open(os.path.dirname(os.path.abspath(__file__)) + "/data/test11",'rb') as f:
+            data = f.read()
+
+        with self.assertRaisesRegex(ValueError,'invalid compression flag'):
+            ReplRecord(data)
+
 
 if __name__ == '__main__':
     unittest.main()
