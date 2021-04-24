@@ -1,4 +1,5 @@
 from sink import ReplSink
+from record import ReplRecord
 from boto3 import resource
 from botocore.config import Config
 import os
@@ -45,26 +46,60 @@ class App:
             dynamodb = resource('dynamodb', endpoint_url=endpoint_url, config=config)
         else:
             dynamodb = resource('dynamodb', config=config)
-        
-        return dynamodb.Table(table_name)
 
-    def signal_handler(self, sign_num, frame):
-        self.shutdown = True
+        table = dynamodb.Table(table_name)
+        try:
+            table.load()
+        except table.meta.client.exceptions.ResourceNotFoundException:
+            self.logger.info(f"Table {table_name} does not exist, creating")
+            dynamodb.create_table(
+                TableName=table_name,
+                AttributeDefinitions=[
+                    {'AttributeName': 'pkey','AttributeType': 'S'}
+                ],
+                KeySchema=[
+                    {'AttributeName': 'pkey', 'KeyType': 'HASH'}
+                ],
+                ProvisionedThroughput={'ReadCapacityUnits': 5,'WriteCapacityUnits': 5}
+            )
+            table.wait_until_exists()
+        return table
 
-    def process_record(self, rec):
+    def get_last_modified(self, key: str):
+        try:
+            item = self.table.get_item(Key={'pkey':key}, AttributesToGet=['_riak_lm'])
+        except:
+            return ""
+        else:
+            if 'Item' in item:
+                return item['Item']['_riak_lm']
+            return ""
+
+    def update_item(self, key: str, rec: ReplRecord):
+        try:
+            data = json.loads(rec.value)
+            data['pkey'] = key
+            data['_riak_lm'] = rec.last_modified
+            data['_riak_vclocks'] = rec.vector_clocks.decode('utf-8')
+            self.logger.info(f"Putting item {key}")
+            self.table.put_item(Item=data)
+        except Exception as e:
+            self.logger.error(e)
+
+    def process_record(self, rec: ReplRecord):
         bucket = rec.bucket.decode('utf-8')
         key = rec.key.decode('utf-8')
         if {b'content-type': b'application/json'} in rec.metadata and bucket == self.bucket_filter:
-            try:
-                data = json.loads(rec.value)
-                data['pkey'] = key
-                data['riak_lm'] = rec.last_modified
-                self.logger.info(f"Putting item {key}")
-                self.table.put_item(Item=data)
-            except Exception as e:
-                self.logger.error(e)
+            last_modified = self.get_last_modified(key)
+            if rec.last_modified > last_modified:
+                self.update_item(key, rec)
+            else:
+                self.logger.info(f"Not updating {key} because existing_last_modified={last_modified} > new_last_modified={rec.last_modified}")
         else:
             self.logger.warn(f"Key not JSON or wrong bucket {bucket} {key}")
+
+    def signal_handler(self, sign_num, frame):
+        self.shutdown = True
 
     def main(self):
         signal.signal(signal.SIGINT, self.signal_handler)
@@ -72,21 +107,21 @@ class App:
 
         self.logger.info("Starting consume from queue")
 
-        backoff = False
+        riak_failure = False
         while not self.shutdown:
             try:
                 rec = self.sink.fetch()
             except HTTPError as e:
                 self.logger.error(e)
-                self.logger.warn("Backing off for 5 seconds")
-                backoff = True
+                self.logger.warn("Riak failure, backing off for 5 seconds")
+                riak_failure = True
                 time.sleep(5)
             except Exception as e:
                 self.logger.warn(e)
             else:
-                if backoff:
-                    self.logger.info("Recovered from back off")
-                    backoff = False
+                if riak_failure:
+                    self.logger.info("Recovered from Riak failure")
+                    riak_failure = False
                 if not rec.empty:
                     self.process_record(rec)
                 
