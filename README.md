@@ -22,7 +22,7 @@ This repo contains
   ```
   will be consumed by the Python app and put into the local DynamoDB
   ```
-  curl -XPUT -H "Content-type: application/json" -d '{"test":"data"}' http://localhost:8098/buckets/test/keys/testKey
+  aws dynamodb scan --table-name test --endpoint-url http://localhost:8000
   ```
 
 ## Getting started
