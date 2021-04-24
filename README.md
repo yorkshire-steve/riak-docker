@@ -32,6 +32,8 @@ Run the following commands in the root of the repo directory
 docker-compose build
 docker-compose up -d
 ```
+Often DynamoDB hasn't started before the Python app, so simply do `docker-compose up -d` again.
+(TODO: Fix this)
 
 ## Tests
 
