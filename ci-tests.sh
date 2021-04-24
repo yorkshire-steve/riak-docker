@@ -4,6 +4,7 @@ SCRIPT_DIR=$(dirname $0)
 BASE_DIR=$(cd $SCRIPT_DIR && pwd)
 
 source $BASE_DIR/venv/bin/activate
+export PYTHONPATH=src/
 pushd $BASE_DIR
 DOCKER_IMAGE_ID=$(docker build -q -t riak docker-riak)
 DOCKER_ID=$(docker run -d -p 8098:8098 riak)
