@@ -15,8 +15,8 @@ class App:
     def __init__(self):
         self.shutdown = False
         self.logger = self.get_logger()
-        self.sink = self.setup_riak_sink()
-        self.table = self.setup_dynamodb_table()
+        self.sink = None
+        self.table = None
 
     def get_logger(self):
         logger = logging.getLogger()
@@ -73,19 +73,31 @@ class App:
             data['pkey'] = key
             data['_riak_lm'] = Decimal(rec.last_modified)
             data['_riak_vclocks'] = rec.vector_clocks.decode('utf-8')
-            self.logger.info(f"Putting item {key}")
+            self.logger.info(f"Putting item key={key}")
             condition = Attr('_riak_lm').lt(data['_riak_lm']) | Attr('_riak_lm').not_exists()
             self.table.put_item(Item=data, ConditionExpression=condition)
         except self.table.meta.client.exceptions.ConditionalCheckFailedException:
-            self.logger.warning(f"Put for key={key} failed due to existing last modified > {data['_riak_lm']}")
+            self.logger.warning(f"Put for key={key} failed due to existing last modified > {rec.last_modified}")
+        except Exception as e:
+            self.logger.error(e)
+
+    def delete_item(self, key: str, rec: ReplRecord):
+        try:
+            self.logger.info(f"Deleting item key={key}")
+            condition = Attr('_riak_lm').lt(Decimal(rec.last_modified))
+            self.table.delete_item(Key={'pkey':key}, ConditionExpression=condition)
+        except self.table.meta.client.exceptions.ConditionalCheckFailedException:
+            self.logger.warning(f"Delete for key={key} failed due to existing last modified > {rec.last_modified}")
         except Exception as e:
             self.logger.error(e)
 
     def process_record(self, rec: ReplRecord):
         bucket = rec.bucket.decode('utf-8')
         key = rec.key.decode('utf-8')
-        if {b'content-type': b'application/json'} in rec.metadata and bucket == self.bucket_filter:
+        if {b'content-type': b'application/json'} in rec.metadata and bucket == self.bucket_filter and not rec.is_delete:
             self.update_item(key, rec)
+        elif bucket == self.bucket_filter and rec.is_delete:
+            self.delete_item(key, rec)
         else:
             self.logger.warning(f"Key not JSON or wrong bucket {bucket} {key}")
 
@@ -95,6 +107,9 @@ class App:
     def main(self):
         signal.signal(signal.SIGINT, self.signal_handler)
         signal.signal(signal.SIGTERM, self.signal_handler)
+
+        self.sink = self.setup_riak_sink()
+        self.table = self.setup_dynamodb_table()
 
         self.logger.info("Starting consume from queue")
 
