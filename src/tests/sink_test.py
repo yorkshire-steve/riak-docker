@@ -117,10 +117,10 @@ class TestReplSink(unittest.TestCase):
         key = b'testKey'
         before_time = time.time()
         self.put_test_object(bucket.decode('utf-8'), key.decode('utf-8'))
-        after_time = time.time()
 
         time.sleep(0.05)
         rec = self.sink.fetch()
+        after_time = time.time()
         self.assertGreaterEqual(float(rec.last_modified), before_time)
         self.assertLessEqual(float(rec.last_modified), after_time)
 
