@@ -132,7 +132,7 @@ class App:
                     self.process_record(rec)
                 if rec.empty:
                     time.sleep(0.1)
-        
+
         self.logger.info("Safe shutdown, goodbye.")
 
 if __name__ == '__main__':

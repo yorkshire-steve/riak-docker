@@ -36,6 +36,6 @@ Often DynamoDB hasn't started before the Python app, so simply do `docker-compos
 
 ## Tests
 
-There is good coverage of unit tests for `record.py` and `sink.py`, the latter requires a local Riak instance on port 8098.
+There is good coverage of unit tests, most of which require local Riak and DynamoDB.
 
 Running `ci-test.sh` should take care of everything for you.

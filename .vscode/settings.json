@@ -17,6 +17,7 @@
         "PYTHONPATH":"${workspaceFolder}/src",
         "AWS_ACCESS_KEY_ID": "DUMMYIDEXAMPLE",
         "AWS_SECRET_ACCESS_KEY": "DUMMYEXAMPLEKEY",
-        "AWS_DEFAULT_REGION": "eu-west-2"
+        "AWS_DEFAULT_REGION": "eu-west-2",
+        "DYNAMODB_ENDPOINT_URL": "http://localhost:8000"
     }
 }
