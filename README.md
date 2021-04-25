@@ -27,11 +27,11 @@ This repo contains
 
 ## Getting started
 
-Run the following commands in the root of the repo directory
+Run the following command in the root of the repo directory
 ```
 docker-compose --profile app up -d
 ```
-Often DynamoDB hasn't started before the Python app, so simply do `docker-compose --profile up -d` again.
+Often DynamoDB hasn't started before the Python app, so simply do `docker-compose --profile app up -d` again.
 (TODO: Fix this)
 
 ## Tests
