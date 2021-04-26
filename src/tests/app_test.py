@@ -7,6 +7,8 @@ import os
 import boto3
 from decimal import Decimal
 from unittest.mock import Mock
+from multiprocessing import Process
+import urllib3
 
 class TestApp(unittest.TestCase):
 
@@ -20,12 +22,26 @@ class TestApp(unittest.TestCase):
         self.table_name = os.getenv('DYNAMODB_TABLE', 'test')
         self.endpoint_url = os.getenv('DYNAMODB_ENDPOINT_URL')
         self.test_data = b'{"test":"data"}'
+        self.sink = ReplSink(host=self.host, port=self.port, queue=self.queue_name)
+        self.http = urllib3.HTTPConnectionPool(host=self.host, port=8098, retries=False)
+
+        empty = False
+        while not empty:
+            rec = self.sink.fetch()
+            empty = rec.empty
 
     def tearDown(self):
         """
         Tear down
         """
-        pass
+        rec = self.sink.fetch()
+        self.http.close()
+        assert rec.empty
+
+    def put_test_object(self, bucket: str, key: str):
+        url = f"http://{self.host}:8098/buckets/{bucket}/keys/{key}"
+        headers = {'Content-type':'application/json'}
+        self.http.request("PUT", url, headers=headers, body=self.test_data, retries=False)
 
     def test_setup_riak_sink(self):
         app = App()
@@ -122,6 +138,103 @@ class TestApp(unittest.TestCase):
         item = app.table.get_item(Key={'pkey':'test'})
         
         self.assertNotIn('Item', item)
+
+    def test_delete_item_with_older(self):
+        with open(os.path.dirname(os.path.abspath(__file__)) + "/data/test",'rb') as f:
+            data = f.read()
+
+        rec = ReplRecord(data)
+
+        app = App()
+        app.logger = Mock()
+        app.logger.warning = Mock()
+        app.table = app.setup_dynamodb_table()
+        app.table.put_item(Item={'pkey':'test', '_riak_lm': Decimal('1618954321.126554')})
+        time.sleep(0.05)
+
+        app.delete_item('test', rec)
+
+        item = app.table.get_item(Key={'pkey':'test'})
+
+        self.assertEqual(item['Item']['pkey'], 'test')
+        self.assertEqual(item['Item']['_riak_lm'], Decimal('1618954321.126554'))
+        app.logger.warning.assert_called_with("Delete for key=test failed due to existing last modified > 1618846125.126554")
+
+    def test_process_record(self):
+        with open(os.path.dirname(os.path.abspath(__file__)) + "/data/test",'rb') as f:
+            data = f.read()
+
+        rec = ReplRecord(data)
+
+        app = App()
+        app.bucket_filter = 'test'
+        app.logger = Mock()
+        app.table = app.setup_dynamodb_table()
+        app.table.delete_item(Key={'pkey':'test'})
+        time.sleep(0.05)
+
+        app.process_record(rec)
+
+        item = app.table.get_item(Key={'pkey':'test'})
+
+        self.assertEqual(item['Item']['pkey'], 'test')
+        self.assertEqual(item['Item']['_riak_lm'], Decimal('1618846125.126554'))
+        self.assertEqual(item['Item']['_riak_vclocks'], 'g2wAAAACaAJtAAAACL8Aoe8A+zsmaAJhAm4FAHcc8tkOaAJtAAAADL8Aoe8A+0zuAAAAAWgCYQJuBQCtHfLZDmo=')
+        self.assertEqual(item['Item']['test'], 'data4')
+
+    def test_process_record_delete(self):
+        with open(os.path.dirname(os.path.abspath(__file__)) + "/data/test3",'rb') as f:
+            data = f.read()
+
+        rec = ReplRecord(data)
+
+        app = App()
+        app.bucket_filter = 'test'
+        app.logger = Mock()
+        app.table = app.setup_dynamodb_table()
+        app.table.put_item(Item={'pkey':'test', '_riak_lm': Decimal('1618846000.126554')})
+        time.sleep(0.05)
+
+        app.process_record(rec)
+
+        item = app.table.get_item(Key={'pkey':'test'})
+        
+        self.assertNotIn('Item', item)
+
+    def test_process_record_wrong_bucket(self):
+        with open(os.path.dirname(os.path.abspath(__file__)) + "/data/test7",'rb') as f:
+            data = f.read()
+
+        rec = ReplRecord(data)
+
+        app = App()
+        app.bucket_filter = 'test'
+        app.logger = Mock()
+        app.logger.warning = Mock()
+
+        app.process_record(rec)
+
+        app.logger.warning.assert_called_with("Key not JSON or wrong bucket testBucket testKey")
+
+    @unittest.skip("skipping broken test")
+    def test_running_app_normal_put(self):
+        app = App()
+        app_process = Process(target=app.main)
+
+        dynamodb = boto3.resource('dynamodb', endpoint_url=self.endpoint_url)
+        table = dynamodb.Table(self.table_name)
+        table.wait_until_exists()
+        table.delete_item(Key={'pkey':'testkey'})
+
+        self.put_test_object('test', 'testkey')
+        time.sleep(5)
+
+        app_process.terminate()
+
+        item = app.table.get_item(Key={'pkey':'testkey'})
+
+        self.assertEqual(item['Item']['pkey'], 'testkey')
+        self.assertEqual(item['Item']['test'], 'data')
 
 if __name__ == '__main__':
     unittest.main()
