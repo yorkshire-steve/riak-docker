@@ -23,8 +23,12 @@ class TooManySiblingsError(Exception):
 
 class ReplRecord():
 
-    def __init__(self, raw_data=None):
+    def __init__(self, raw_data=None, vc_format: str = "base64"):
         self._raw_data = raw_data
+        if vc_format in ["base64", "dict"]:
+            self._vc_format = vc_format
+        else:
+            raise ValueError(f"Invalid vector clock format {vc_format}")
 
         self.empty = True
         self.crc = 0
@@ -141,7 +145,17 @@ class ReplRecord():
         clock_length = self._extract_uint32()
 
         if clock_length != 0:
-            self.vector_clocks = base64.b64encode(self._extract_str(clock_length))
+            if self._vc_format == "dict":
+                try:
+                    erl_term = erlang.binary_to_term(self._extract_str(clock_length))
+                    self.vector_clocks = {}
+                    for clock in erl_term:
+                        actor = "".join([ str(x) for x in clock[0].binary() ])
+                        self.vector_clocks[actor] = clock[1][0]
+                except:
+                    raise ValueError("Could not decode vector clocks")
+            else:
+                self.vector_clocks = base64.b64encode(self._extract_str(clock_length))
 
     def _get_num_siblings(self):
         self.siblings_count = self._extract_uint32()

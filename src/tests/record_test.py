@@ -26,6 +26,33 @@ class TestReplRecord(unittest.TestCase):
         self.assertEqual(rec.vtag, b'5kzmcxRpTdtQFl0IIuAbkF')
         self.assertIn({b'content-type': b'application/json'}, rec.metadata)
 
+    def test_normal_put_vc_format_dict(self):
+        """
+        Test a normal PUT record can be decoded with vc_format=dict
+        """
+        with open(os.path.dirname(os.path.abspath(__file__)) + "/data/test",'rb') as f:
+            data = f.read()
+
+        rec = ReplRecord(data, vc_format='dict')
+
+        self.assertFalse(rec.empty)
+        self.assertEqual(rec.crc, 3257020141)
+        self.assertFalse(rec.is_delete)
+        self.assertFalse(rec.compressed)
+        self.assertIsNone(rec.bucket_type)
+        self.assertEqual(rec.bucket, b'test')
+        self.assertEqual(rec.key, b'test')
+        self.assertEqual(rec.vector_clocks, {'1090001219101612390251762380001': 2,
+            '1090008191016123902515938': 2})
+        self.assertEqual(rec.value, b'{"test":"data4"}')
+        self.assertEqual(rec.last_modified, '1618846125.126554')
+        self.assertEqual(rec.vtag, b'5kzmcxRpTdtQFl0IIuAbkF')
+        self.assertIn({b'content-type': b'application/json'}, rec.metadata)
+
+    def test_invalid_vc_format(self):
+        with self.assertRaisesRegex(ValueError,'Invalid vector clock format invalid'):
+            ReplRecord(b'', vc_format='invalid')
+
     def test_empty(self):
         """
         Test a replication record from empty queue can be decoded

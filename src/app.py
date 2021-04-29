@@ -34,7 +34,7 @@ class App:
         queue_name = os.getenv('RIAK_QUEUE', 'q1_ttaaefs')
         self.bucket_filter = os.getenv('RIAK_BUCKET', 'test')
         self.logger.info(f"Setting up replication sink from host={host} port={port} queue_name={queue_name}")
-        return ReplSink(host=host, port=port, queue=queue_name)
+        return ReplSink(host=host, port=port, queue=queue_name, vc_format='dict')
 
     def setup_dynamodb_table(self):
         connect_timeout = int(os.getenv('DYNAMODB_CONNECT_TIMEOUT', '1'))
@@ -67,27 +67,50 @@ class App:
             table.wait_until_exists()
         return table
 
+    def get_vector_clocks_condition(self, vector_clocks: dict):
+        conditions = []
+        expression_attr_names = {'#vclocks':'_riak_vclocks'}
+        expression_attr_values = {}
+        i = 0
+        for k, v in vector_clocks.items():
+            conditions.append("attribute_not_exists(#vclocks.#a" + str(i) + ")")
+            conditions.append("#vclocks.#a" + str(i) + " < :v" + str(i))
+            expression_attr_names['#a' + str(i)] = k
+            expression_attr_values[':v' + str(i)] = v
+            i += 1
+        condition = " OR ".join(conditions)
+        return condition, expression_attr_names, expression_attr_values
+
     def update_item(self, key: str, rec: ReplRecord):
         try:
             data = json.loads(rec.value)
             data['pkey'] = key
             data['_riak_lm'] = Decimal(rec.last_modified)
-            data['_riak_vclocks'] = rec.vector_clocks.decode('utf-8')
+            data['_riak_vclocks'] = rec.vector_clocks
+            condition, attr_names, attr_values = self.get_vector_clocks_condition(rec.vector_clocks)
             self.logger.info(f"Putting item key={key}")
-            condition = Attr('_riak_lm').lt(data['_riak_lm']) | Attr('_riak_lm').not_exists()
-            self.table.put_item(Item=data, ConditionExpression=condition)
+
+            self.table.put_item(
+                Item=data,
+                ConditionExpression=condition,
+                ExpressionAttributeNames=attr_names,
+                ExpressionAttributeValues=attr_values)
         except self.table.meta.client.exceptions.ConditionalCheckFailedException:
-            self.logger.warning(f"Put for key={key} failed due to existing last modified > {rec.last_modified}")
+            self.logger.warning(f"Put for key={key} failed due to vector clock mis-match")
         except Exception as e:
             self.logger.error(e)
 
     def delete_item(self, key: str, rec: ReplRecord):
         try:
             self.logger.info(f"Deleting item key={key}")
-            condition = Attr('_riak_lm').lt(Decimal(rec.last_modified))
-            self.table.delete_item(Key={'pkey':key}, ConditionExpression=condition)
+            condition, attr_names, attr_values = self.get_vector_clocks_condition(rec.vector_clocks)
+            self.table.delete_item(
+                Key={'pkey':key},
+                ConditionExpression=condition,
+                ExpressionAttributeNames=attr_names,
+                ExpressionAttributeValues=attr_values)
         except self.table.meta.client.exceptions.ConditionalCheckFailedException:
-            self.logger.warning(f"Delete for key={key} failed due to existing last modified > {rec.last_modified}")
+            self.logger.warning(f"Delete for key={key} failed due to vector clock mis-match")
         except Exception as e:
             self.logger.error(e)
 

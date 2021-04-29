@@ -83,7 +83,7 @@ class TestApp(unittest.TestCase):
         with open(os.path.dirname(os.path.abspath(__file__)) + "/data/test",'rb') as f:
             data = f.read()
 
-        rec = ReplRecord(data)
+        rec = ReplRecord(data, vc_format='dict')
 
         app = App()
         app.logger = Mock()
@@ -97,20 +97,21 @@ class TestApp(unittest.TestCase):
 
         self.assertEqual(item['Item']['pkey'], 'test')
         self.assertEqual(item['Item']['_riak_lm'], Decimal('1618846125.126554'))
-        self.assertEqual(item['Item']['_riak_vclocks'], 'g2wAAAACaAJtAAAACL8Aoe8A+zsmaAJhAm4FAHcc8tkOaAJtAAAADL8Aoe8A+0zuAAAAAWgCYQJuBQCtHfLZDmo=')
+        self.assertIn('1090001219101612390251762380001', item['Item']['_riak_vclocks'])
+        self.assertIn('1090008191016123902515938', item['Item']['_riak_vclocks'])
         self.assertEqual(item['Item']['test'], 'data4')
 
     def test_update_item_with_older(self):
         with open(os.path.dirname(os.path.abspath(__file__)) + "/data/test",'rb') as f:
             data = f.read()
 
-        rec = ReplRecord(data)
+        rec = ReplRecord(data, vc_format='dict')
 
         app = App()
         app.logger = Mock()
         app.logger.warning = Mock()
         app.table = app.setup_dynamodb_table()
-        app.table.put_item(Item={'pkey':'test', '_riak_lm': Decimal('1618954321.126554')})
+        app.table.put_item(Item={'pkey':'test', '_riak_vclocks': rec.vector_clocks})
         time.sleep(0.05)
 
         app.update_item('test', rec)
@@ -118,14 +119,13 @@ class TestApp(unittest.TestCase):
         item = app.table.get_item(Key={'pkey':'test'})
 
         self.assertEqual(item['Item']['pkey'], 'test')
-        self.assertEqual(item['Item']['_riak_lm'], Decimal('1618954321.126554'))
-        app.logger.warning.assert_called_with("Put for key=test failed due to existing last modified > 1618846125.126554")
+        app.logger.warning.assert_called_with("Put for key=test failed due to vector clock mis-match")
 
     def test_delete_item(self):
         with open(os.path.dirname(os.path.abspath(__file__)) + "/data/test",'rb') as f:
             data = f.read()
 
-        rec = ReplRecord(data)
+        rec = ReplRecord(data, vc_format='dict')
 
         app = App()
         app.logger = Mock()
@@ -143,13 +143,13 @@ class TestApp(unittest.TestCase):
         with open(os.path.dirname(os.path.abspath(__file__)) + "/data/test",'rb') as f:
             data = f.read()
 
-        rec = ReplRecord(data)
+        rec = ReplRecord(data, vc_format='dict')
 
         app = App()
         app.logger = Mock()
         app.logger.warning = Mock()
         app.table = app.setup_dynamodb_table()
-        app.table.put_item(Item={'pkey':'test', '_riak_lm': Decimal('1618954321.126554')})
+        app.table.put_item(Item={'pkey':'test', '_riak_vclocks': rec.vector_clocks})
         time.sleep(0.05)
 
         app.delete_item('test', rec)
@@ -157,14 +157,13 @@ class TestApp(unittest.TestCase):
         item = app.table.get_item(Key={'pkey':'test'})
 
         self.assertEqual(item['Item']['pkey'], 'test')
-        self.assertEqual(item['Item']['_riak_lm'], Decimal('1618954321.126554'))
-        app.logger.warning.assert_called_with("Delete for key=test failed due to existing last modified > 1618846125.126554")
+        app.logger.warning.assert_called_with("Delete for key=test failed due to vector clock mis-match")
 
     def test_process_record(self):
         with open(os.path.dirname(os.path.abspath(__file__)) + "/data/test",'rb') as f:
             data = f.read()
 
-        rec = ReplRecord(data)
+        rec = ReplRecord(data, vc_format='dict')
 
         app = App()
         app.bucket_filter = 'test'
@@ -179,14 +178,15 @@ class TestApp(unittest.TestCase):
 
         self.assertEqual(item['Item']['pkey'], 'test')
         self.assertEqual(item['Item']['_riak_lm'], Decimal('1618846125.126554'))
-        self.assertEqual(item['Item']['_riak_vclocks'], 'g2wAAAACaAJtAAAACL8Aoe8A+zsmaAJhAm4FAHcc8tkOaAJtAAAADL8Aoe8A+0zuAAAAAWgCYQJuBQCtHfLZDmo=')
+        self.assertIn('1090001219101612390251762380001', item['Item']['_riak_vclocks'])
+        self.assertIn('1090008191016123902515938', item['Item']['_riak_vclocks'])
         self.assertEqual(item['Item']['test'], 'data4')
 
     def test_process_record_delete(self):
         with open(os.path.dirname(os.path.abspath(__file__)) + "/data/test3",'rb') as f:
             data = f.read()
 
-        rec = ReplRecord(data)
+        rec = ReplRecord(data, vc_format='dict')
 
         app = App()
         app.bucket_filter = 'test'
@@ -205,7 +205,7 @@ class TestApp(unittest.TestCase):
         with open(os.path.dirname(os.path.abspath(__file__)) + "/data/test7",'rb') as f:
             data = f.read()
 
-        rec = ReplRecord(data)
+        rec = ReplRecord(data, vc_format='dict')
 
         app = App()
         app.bucket_filter = 'test'
